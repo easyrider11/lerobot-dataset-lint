@@ -67,6 +67,30 @@ lerobot-lint · lerobot/pusht  (v3.0, checked 50/206 episodes)
 
 `--json` emits the full machine-readable report for CI.
 
+## Checkpoint mode
+
+The same contract thinking applied to **policy checkpoints**: does a model
+repo's `config.json` agree with its own shipped normalization statistics?
+
+```bash
+lerobot-lint lerobot/smolvla_libero        # auto-detects checkpoint vs dataset
+```
+
+| Rule | Sev | What it catches |
+|---|---|---|
+| K001 | ERROR | config `input_features` state dims ≠ shipped normalizer stats dims — the stale-feature-spec bug ([huggingface/lerobot#4517](https://github.com/huggingface/lerobot/issues/4517)) |
+| K002 | ERROR | config action dims ≠ shipped action stats |
+| K003 | WARN | config declares cameras the preprocessor's rename map never produces (phantoms inherited from a base checkpoint) |
+| K005 | WARN | no stats anywhere — config unverifiable |
+
+Metadata only, no weights downloaded: processor stats files are a few KB, and
+old-style checkpoints (stats stored as `normalize_*` buffers inside
+`model.safetensors`) are read via an HTTP **Range request on the safetensors
+header** — 8 bytes of length + JSON, never the tensors.
+
+See [`studies/checkpoint-sweep/`](studies/checkpoint-sweep/) for an ecosystem
+sweep of the most-downloaded public lerobot checkpoints using this mode.
+
 ## Validated against the real world
 
 Development was test-driven on synthetic corrupted fixtures (22 tests, every
