@@ -5,9 +5,12 @@ Catch convention drift, dropped frames, stale stats and dead recordings *before*
 they poison a training run.
 
 ```bash
-uvx lerobot-dataset-lint lerobot/pusht          # any hub repo id
-lerobot-lint ~/my_dataset --sample 100 --strict # or a local dataset dir
+uvx --from git+https://github.com/easyrider11/lerobot-dataset-lint \
+    lerobot-lint lerobot/pusht                  # any hub repo id (dataset OR checkpoint)
+lerobot-lint ~/my_dataset --sample 100 --strict # or a local dir
 ```
+
+(Not on PyPI yet - the `--from git+...` form is the working one-liner.)
 
 No torch, no lerobot import, no video decoding. Meta files are always fetched;
 frame-level checks run on a sample of episodes and download **only the parquet
