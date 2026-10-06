@@ -37,6 +37,7 @@ def build_dataset(
     mixed_gripper: bool = False,
     frozen_action: bool = False,
     saturated_action: bool = False,
+    names: dict | None = None,
 ) -> Path:
     rng = np.random.default_rng(0)
     root.mkdir(parents=True, exist_ok=True)
@@ -138,14 +139,18 @@ def build_dataset(
         "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
         "features": {
             vkey: {"dtype": "video", "shape": [64, 64, 3]},
-            "observation.state": {"dtype": "float32", "shape": [2]},
-            "action": {"dtype": "float32", "shape": [3]},
+            "observation.state": {"dtype": "float32", "shape": [2],
+                                  "names": ["shoulder_pan.pos", "elbow_flex.pos"]},
+            "action": {"dtype": "float32", "shape": [3],
+                       "names": ["shoulder_pan.pos", "elbow_flex.pos", "gripper.pos"]},
             "timestamp": {"dtype": "float32", "shape": [1]},
             "frame_index": {"dtype": "int64", "shape": [1]},
             "episode_index": {"dtype": "int64", "shape": [1]},
             "index": {"dtype": "int64", "shape": [1]},
         },
     }
+    for key, value in (names or {}).items():  # override names to break N-rules
+        info["features"][key]["names"] = value
     (root / "meta" / "info.json").write_text(json.dumps(info))
     (root / "meta" / "stats.json").write_text(json.dumps(stats))
     return root

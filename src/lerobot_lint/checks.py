@@ -1,6 +1,7 @@
 """The rules. Each takes (view, report) and appends findings.
 
-Rule numbering: M=metadata, E=episode index, D=frame data, G=gripper, V=video.
+Rule numbering: M=metadata, E=episode index, D=frame data, G=gripper, V=video,
+N=feature names (names.py).
 Every rule exists because something real breaks: the docstrings say what.
 """
 
@@ -10,6 +11,7 @@ import numpy as np
 
 from .findings import Report
 from .loader import DatasetView
+from .names import check_names
 
 EPS_STD = 1e-8
 
@@ -355,8 +357,13 @@ def check_gripper(view: DatasetView, report: Report) -> None:
                    "output convention before training", feature="action")
 
 
+def check_feature_names(view: DatasetView, report: Report) -> None:
+    """N001-N005: see names.py - metadata only, no frames read."""
+    check_names(view.info, report)
+
+
 ALL_CHECKS = (
-    check_info, check_counts, check_stats, check_tasks,
+    check_info, check_counts, check_stats, check_tasks, check_feature_names,
     check_episode_lengths, check_global_index, check_video_alignment,
     check_frames, check_gripper,
 )
