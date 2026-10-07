@@ -1,6 +1,6 @@
 [project]
 name = "lerobot-dataset-lint"
-version = "0.2.0"
+version = "0.3.0"
 description = "Contract linter for LeRobot datasets: catch convention drift, dropped frames, stale stats and dead recordings before they poison a training run."
 readme = "README.md"
 license = { text = "Apache-2.0" }

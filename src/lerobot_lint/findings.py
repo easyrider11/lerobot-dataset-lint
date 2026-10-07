@@ -41,6 +41,7 @@ class Report:
     episodes_total: int = 0
     findings: list[Finding] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)  # scan provenance, not findings
+    facts: dict = field(default_factory=dict)  # machine-readable per-rule facts (--json)
 
     def add(self, rule: str, severity: str, message: str,
             episode: int | None = None, feature: str | None = None) -> None:
@@ -101,4 +102,5 @@ class Report:
             "notes": self.notes,
             "counts": {s: self.count(s) for s in SEVERITIES},
             "findings": [f.to_dict() for f in self.findings],
+            **({"facts": self.facts} if self.facts else {}),
         }, indent=2)

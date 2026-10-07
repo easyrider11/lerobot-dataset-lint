@@ -57,6 +57,12 @@ itself: data ↔ stats ↔ metadata ↔ index ↔ video timeline.
 | D005 | WARN | action dim saturated at its bound in >60% of frames | teleop clipping / binary dim mislabelled continuous |
 | D006 | WARN | action constant for a whole episode | dead recording |
 | G001 | ERROR/INFO | **gripper convention report; mixed conventions across episodes** | `{-1,+1}` vs `{0,1}` vs continuous — the "arm never grasps" classic |
+| N001 | ERROR | `names` length ≠ feature shape | code that zips names with values drops or shifts channels |
+| N002 | ERROR | the same name twice in one feature | a name→value dict silently keeps only one motor |
+| N003 | WARN | placeholder names (`motor_0`, `joint3`, …) | nobody can tell which dim is the gripper |
+| N004 | INFO | multi-dim feature with no `names` | channel identity not queryable (never blocks, per [lerobot#4784](https://github.com/huggingface/lerobot/issues/4784)) |
+| N005 | ERROR | `names` in a layout LeRobot can't read | grouped/indexed dicts with gaps or wrong types |
+| N006 | INFO | one label for a whole multi-dim vector (`["state"]`) | channel identity not queryable; common in LIBERO-style ports |
 
 ## Example
 
@@ -68,7 +74,10 @@ lerobot-lint · lerobot/pusht  (v3.0, checked 50/206 episodes)
   = 0 error(s), 0 warning(s), 1 info
 ```
 
-`--json` emits the full machine-readable report for CI.
+`--json` emits the full machine-readable report for CI, including a per-feature
+`facts.names` verdict (`semantic` / `placeholder` / `absent` / `mismatch` /
+`duplicate` / `invalid`). [`studies/names-sweep/`](studies/names-sweep/) uses
+the same rules on `meta/info.json` alone to measure this across the hub.
 
 ## Checkpoint mode
 
