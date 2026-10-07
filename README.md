@@ -62,6 +62,7 @@ itself: data ↔ stats ↔ metadata ↔ index ↔ video timeline.
 | N003 | WARN | placeholder names (`motor_0`, `joint3`, …) | nobody can tell which dim is the gripper |
 | N004 | INFO | multi-dim feature with no `names` | channel identity not queryable (never blocks, per [lerobot#4784](https://github.com/huggingface/lerobot/issues/4784)) |
 | N005 | ERROR | `names` in a layout LeRobot can't read | grouped/indexed dicts with gaps or wrong types |
+| N006 | INFO | one label for a whole multi-dim vector (`["state"]`) | channel identity not queryable; common in LIBERO-style ports |
 
 ## Example
 

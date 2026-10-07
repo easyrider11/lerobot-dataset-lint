@@ -20,6 +20,15 @@ N002  ERROR  the same name appears twice inside one feature
 N003  WARN   names are placeholders (motor_0, joint_1, ...) - no identity
 N004  INFO   multi-dim feature has no names at all
 N005  ERROR  names present but not in any layout LeRobot can read
+N006  INFO   one label for a whole multi-dim vector (["state"]) - no channel identity
+
+Layouts that are NOT findings (audited on a 359-dataset hub sweep, 2026-10-07):
+- empty declarations (``[]``, ``{}``, ``{"axes": null}``) mean "no names",
+  the same as ``null`` - LeRobot's own flatteners return None for them;
+- one name per axis of a multi-axis feature (``shape=[10, 2]``,
+  ``names=["way", "points"]``) labels axes, like an image's height/width;
+- names for the last axis only (``shape=[20, 14]``, 14 names) are checked
+  against that axis.
 """
 
 from __future__ import annotations
@@ -49,9 +58,10 @@ PLACEHOLDER_SHARE = 0.5  # a feature counts as placeholder-named above this shar
 class NamesFact:
     feature: str
     dims: int
-    layout: str               # absent | list | indexed-dict | grouped | invalid
+    layout: str               # absent | empty | list | indexed-dict | grouped | invalid
     names: list[str] | None
-    status: str               # semantic | placeholder | absent | mismatch | duplicate | invalid
+    status: str               # semantic | placeholder | absent | whole-vector | axis-names
+                              # | mismatch | duplicate | invalid
 
     def to_dict(self) -> dict:
         return {"feature": self.feature, "dims": self.dims, "layout": self.layout,
@@ -63,33 +73,42 @@ def flatten_names(raw: Any) -> tuple[list[str] | None, str]:
     """Return (flat names, layout). Mirrors the layouts LeRobot reads:
     a list (``["shoulder_pan.pos", ...]``), an indexed dict
     (``{"delta_x": 0, ...}``, teleop_gamepad.py) and a grouped dict
-    (``{"motors": [...]}``, older ALOHA-style datasets)."""
+    (``{"motors": [...]}``, older ALOHA-style datasets).
+
+    An empty declaration (``[]``, ``{}``, a grouped dict whose groups are all
+    null) is layout ``empty``: no names, same as ``null``. This matches
+    ``_flatten_feature_names`` in lerobot/policies/molmoact2 (main @ 200ee53)."""
     if raw is None:
         return None, "absent"
     if isinstance(raw, str):
         return [raw], "list"
     if isinstance(raw, dict):
-        if not raw:
-            return None, "invalid"
-        vals = list(raw.values())
-        if all(isinstance(v, int) and not isinstance(v, bool) for v in vals):
+        vals = [v for v in raw.values() if v is not None]
+        if not vals:
+            return None, "empty"
+        if len(vals) == len(raw) and all(isinstance(v, int) and not isinstance(v, bool)
+                                         for v in vals):
             if sorted(vals) != list(range(len(vals))):
                 return None, "invalid"
             return [str(k) for k, _ in sorted(raw.items(), key=lambda kv: kv[1])], "indexed-dict"
         flat: list[str] = []
         for v in vals:
             sub, layout = flatten_names(v)
+            if layout == "empty":
+                continue
             if sub is None or layout != "list":
                 return None, "invalid"
             flat.extend(sub)
-        return flat, "grouped"
+        return (flat, "grouped") if flat else (None, "empty")
     if isinstance(raw, (list, tuple)):
         if not raw:
-            return None, "invalid"
+            return None, "empty"
         flat = []
         for v in raw:
             if isinstance(v, (list, tuple)):
                 sub, layout = flatten_names(v)
+                if layout == "empty":
+                    continue
                 if sub is None:
                     return None, "invalid"
                 flat.extend(sub)
@@ -97,7 +116,7 @@ def flatten_names(raw: Any) -> tuple[list[str] | None, str]:
                 flat.append(str(v))
             else:
                 return None, "invalid"
-        return flat, "list"
+        return (flat, "list") if flat else (None, "empty")
     return None, "invalid"
 
 
@@ -112,19 +131,31 @@ def is_vector_feature(key: str, ft: dict) -> bool:
 def classify(key: str, ft: dict) -> NamesFact:
     shape = ft.get("shape") or [1]
     try:
-        dims = int(math.prod(int(s) for s in shape))
+        axes = [int(x) for x in shape]
     except (TypeError, ValueError):
-        dims = 0
+        axes = []
+    dims = int(math.prod(axes)) if axes else 0
     names, layout = flatten_names(ft.get("names"))
     if layout == "invalid":
-        status = "invalid"
-    elif names is None:
-        status = "absent"
-    elif len(names) != dims:
+        return NamesFact(key, dims, layout, names, "invalid")
+    if names is None:
+        return NamesFact(key, dims, layout, names, "absent")
+    n = len(names)
+    # which axis do the names describe?
+    target = dims
+    if n != dims and len(axes) > 1:
+        if n == len(axes):
+            # one label per axis (["way", "points"] for shape [10, 2])
+            return NamesFact(key, dims, layout, names, "axis-names")
+        if n == axes[-1]:
+            target = axes[-1]  # channel names for the last axis only
+    if n == 1 and target > 1:
+        status = "whole-vector"  # ["state"] for an 8-dim state
+    elif n != target:
         status = "mismatch"
-    elif len(set(names)) != len(names):
+    elif len(set(names)) != n:
         status = "duplicate"
-    elif sum(bool(PLACEHOLDER.match(n.strip())) for n in names) > PLACEHOLDER_SHARE * len(names):
+    elif sum(bool(PLACEHOLDER.match(x.strip())) for x in names) > PLACEHOLDER_SHARE * n:
         status = "placeholder"
     else:
         status = "semantic"
@@ -161,6 +192,11 @@ def check_names(info: dict, report: Report) -> list[NamesFact]:
                        f"'{f.feature}' names are placeholders ({', '.join((f.names or [])[:3])}"
                        f"{', ...' if f.dims > 3 else ''}) - channel identity unknown",
                        feature=f.feature)
+        elif f.status == "whole-vector":
+            report.add("N006", "INFO",
+                       f"'{f.feature}' ({f.dims} dims) has one label "
+                       f"({(f.names or [''])[0]!r}) for the whole vector - channel identity "
+                       f"cannot be queried", feature=f.feature)
         elif f.status == "absent" and f.dims > 1:
             report.add("N004", "INFO",
                        f"'{f.feature}' ({f.dims} dims) has no names - channel identity "
@@ -176,5 +212,6 @@ def dataset_names_class(facts: list[NamesFact]) -> str:
     core = [f for f in facts if f.feature in ("action", "observation.state")] or facts
     if not core:
         return "no-vector-features"
-    order = ["invalid", "mismatch", "duplicate", "absent", "placeholder", "semantic"]
+    order = ["invalid", "mismatch", "duplicate", "absent", "whole-vector", "axis-names",
+             "placeholder", "semantic"]
     return min((f.status for f in core), key=order.index)

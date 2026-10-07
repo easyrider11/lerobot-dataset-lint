@@ -8,6 +8,7 @@ are skipped.
 
     .venv/bin/python studies/names-sweep/sweep.py 500          # sweep + summary
     .venv/bin/python studies/names-sweep/sweep.py --summary    # summary only
+    .venv/bin/python studies/names-sweep/sweep.py --reclassify # same datasets, current rules
 """
 
 from __future__ import annotations
@@ -23,8 +24,8 @@ from lerobot_lint.findings import Report  # noqa: E402
 from lerobot_lint.names import check_names, dataset_names_class  # noqa: E402
 
 OUT = Path(__file__).parent / "results.jsonl"
-CLASSES = ("semantic", "placeholder", "absent", "mismatch", "duplicate", "invalid",
-           "no-vector-features")
+CLASSES = ("semantic", "placeholder", "whole-vector", "axis-names", "absent", "mismatch",
+           "duplicate", "invalid", "no-vector-features")
 
 
 def classify_info(repo: str, info: dict) -> dict:
@@ -79,6 +80,26 @@ def sweep(limit: int) -> None:
             time.sleep(0.2)
 
 
+def reclassify() -> None:
+    """Re-score every row already in results.jsonl with the current N-rules.
+    Same datasets, same order; info.json comes from the HF cache (one network
+    call only if it was evicted). Fetch errors stay as they are."""
+    from huggingface_hub import hf_hub_download
+
+    rows = [json.loads(line) for line in OUT.read_text().splitlines() if line]
+    new = []
+    for r in rows:
+        if r["classification"] == "FETCH_ERROR":
+            new.append(r)
+            continue
+        path = hf_hub_download(r["repo"], "meta/info.json", repo_type="dataset")
+        row = classify_info(r["repo"], json.loads(Path(path).read_text()))
+        row["downloads"] = r.get("downloads")
+        new.append(row)
+    OUT.write_text("".join(json.dumps(r) + "\n" for r in new))
+    print(f"reclassified {sum(r['classification'] != 'FETCH_ERROR' for r in new)} rows")
+
+
 def summarize(rows: list[dict]) -> str:
     """Markdown summary. Shares are over datasets whose info.json was read."""
     ok = [r for r in rows if r["classification"] != "FETCH_ERROR"]
@@ -111,7 +132,9 @@ def summarize(rows: list[dict]) -> str:
 
 
 def main(argv: list[str]) -> None:
-    if argv and argv[0] != "--summary":
+    if argv and argv[0] == "--reclassify":
+        reclassify()
+    elif argv and argv[0] != "--summary":
         sweep(int(argv[0]))
     rows = [json.loads(line) for line in OUT.read_text().splitlines() if line] \
         if OUT.exists() else []

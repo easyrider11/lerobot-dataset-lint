@@ -39,9 +39,27 @@ def test_flatten_layouts(raw, want, layout):
     assert flatten_names(raw) == (want, layout)
 
 
-@pytest.mark.parametrize("raw", [{}, [], {"a": 0, "b": 2}, {"motors": 3}, [{"x": 1}], 5])
+@pytest.mark.parametrize("raw", [{"a": 0, "b": 2}, {"motors": 3}, [{"x": 1}], 5])
 def test_flatten_rejects_unreadable(raw):
     assert flatten_names(raw) == (None, "invalid")
+
+
+# Real layouts from the 2026-10-07 hub sweep that the first N005 version
+# wrongly called unreadable. LeRobot's own flattener (molmoact2,
+# _flatten_feature_names) returns None for all of them: they mean "no names".
+@pytest.mark.parametrize("raw", [
+    [],                    # RoboCOIN/*: gripper_open_scale_state, shape [1]
+    {},
+    {"axes": None},        # lerobot/metaworld_mt50: observation.state
+    [[]],
+])
+def test_empty_declarations_are_absent_not_invalid(raw):
+    assert flatten_names(raw) == (None, "empty")
+    assert classify("observation.state", ft(raw, shape=(4,))).status == "absent"
+
+
+def test_grouped_dict_skips_null_groups():
+    assert flatten_names({"motors": ["a", "b"], "axes": None}) == (["a", "b"], "grouped")
 
 
 # -- statuses -------------------------------------------------------------------
@@ -65,6 +83,56 @@ def ft(names, shape=(6,), dtype="float32"):
 ])
 def test_classify(names, status):
     assert classify("action", ft(names)).status == status
+
+
+# -- real layouts behind the first sweep's N001 hits (2026-10-07 audit) -------
+
+
+@pytest.mark.parametrize("names, shape", [
+    (["state"], (8,)),            # lerobot/libero observation.state
+    (["actions"], (7,)),          # lerobot/libero action
+    ("motion_token", (64,)),      # mncai/G1_Dex3_*: action.motion_token (bare string)
+    (["channels"], (8,)),         # jasontchan/emg-*: observation.emg.lower
+])
+def test_one_label_for_whole_vector(names, shape):
+    assert classify("observation.state", ft(names, shape=shape)).status == "whole-vector"
+
+
+def test_one_name_for_one_dim_is_still_semantic():
+    assert classify("action", ft(["gripper"], shape=(1,))).status == "semantic"
+
+
+@pytest.mark.parametrize("names, shape", [
+    (["way", "points"], (10, 2)),                       # yaak-ai/L2D waypoints
+    (["hand", "finger", "height", "width", "flow_type"], (2, 5, 24, 32, 4)),  # tactile
+])
+def test_one_name_per_axis_is_axis_names(names, shape):
+    assert classify("observation.state.waypoints", ft(names, shape=shape)).status == "axis-names"
+
+
+def test_names_for_last_axis_of_action_chunk():
+    # suz22/RoboTwin_*: action shape [20, 14], names [[14 names]]
+    names = [[f"left_{i}" for i in range(7)] + [f"right_{i}" for i in range(7)]]
+    fact = classify("action", ft(names, shape=(20, 14)))
+    assert fact.status == "semantic"
+    short = [[f"left_{i}" for i in range(7)] + [f"right_{i}" for i in range(6)]]
+    assert classify("action", ft(short, shape=(20, 14))).status == "mismatch"
+
+
+@pytest.mark.parametrize("names, shape", [
+    # cadene/droid_1.0.1: joint_position has the 6 cartesian axis names
+    ({"axes": ["x", "y", "z", "roll", "pitch", "yaw"]}, (7,)),
+    # mncai/G1_Dex3_*: observation.eef_state, 4 group names for 14 dims
+    (["left_wrist_pos", "left_wrist_abs_quat", "right_wrist_pos", "right_wrist_abs_quat"],
+     (14,)),
+])
+def test_real_mismatches_stay_mismatches(names, shape):
+    assert classify("observation.state", ft(names, shape=shape)).status == "mismatch"
+
+
+def test_whole_vector_is_info_n006():
+    r = run({"observation.state": ft(["state"], shape=(8,))})
+    assert {(f.rule, f.severity) for f in r.findings} == {("N006", "INFO")}
 
 
 def test_placeholder_needs_majority():

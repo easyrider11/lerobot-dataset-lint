@@ -19,7 +19,7 @@ from lerobot_lint.names import classify, is_vector_feature  # noqa: E402
 
 OUT = Path(__file__).parent / "results.jsonl"
 RULE_STATUS = {"N001": "mismatch", "N002": "duplicate", "N003": "placeholder",
-               "N004": "absent", "N005": "invalid"}
+               "N004": "absent", "N005": "invalid", "N006": "whole-vector"}
 
 
 def describe(repo: str, info: dict, status: str, width: int = 160) -> list[str]:
