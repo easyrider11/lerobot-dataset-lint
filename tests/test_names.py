@@ -198,3 +198,19 @@ def test_sweep_classify_and_summarize():
     assert "| semantic | 1 | 33.3% |" in md
     assert "2/3 = 66.7%" in md
     assert "- N003: 1" in md and "- N004: 1" in md
+
+
+def test_sweep_explain_prints_raw_names_for_one_status():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "studies" / "names-sweep" / "explain.py"
+    spec = importlib.util.spec_from_file_location("names_explain", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    info = {"features": {"action": ft({"a": 0, "b": 5}),
+                         "observation.state": ft(SO101),
+                         "observation.images.top": {"dtype": "video", "shape": [3], "names": 7}}}
+    lines = mod.describe("x/y", info, "invalid")
+    assert lines == ['x/y  action  float32 shape=[6]  names={"a": 0, "b": 5}']
+    assert mod.RULE_STATUS["N005"] == "invalid"
